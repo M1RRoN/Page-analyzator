@@ -90,6 +90,3 @@ def check_url(id):
     except RequestException:
         flash('Произошла ошибка при проверке', 'alert-danger')
         return redirect(url_for('show_url', id=id))
-
-if __name__ == '__main__':
-    app.run()
