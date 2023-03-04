@@ -16,13 +16,22 @@
                     </button>
                     <div class="collapse navbar-collapse" id="navbarNav">
                         <div class="navbar-nav">
-                            <a class="nav-link" href="*">Сайты</a>
+                            <a class="nav-link" href="{{ url_for('show_all_urls') }}">Сайты</a>
                         </div>
                     </div>
                 </div>
             </nav>
         </header>
-         <main class="flex-shrink-0">
+        {% with message = get_flashed_messages(with_categories=true) %}
+            {% if message %}
+            {% for category, message in message %}
+            <div class="alert {{ category }} px-3" role="alert">
+                {{ message }}
+            </div>
+            {% endfor %}
+            {% endif %}
+        {% endwith %}
+        <main class="flex-shrink-0">
             {% block content %}{% endblock %}
         </main>
         <footer class="footer mt-auto py-3 border-top bg-light">

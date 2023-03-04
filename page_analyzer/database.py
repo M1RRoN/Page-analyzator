@@ -54,3 +54,33 @@ class Urls(Database):
             url_id = curs.fetchone().id
 
             return url_id
+
+
+class Checks(Database):
+    def find_checks(self, url_id: int) -> NamedTuple:
+        with self.conn.cursor(cursor_factory=NamedTupleCursor) as curs:
+            curs.execute(
+                'SELECT * FROM url_checks '
+                'WHERE url_id=%s ORDER BY id DESC',
+                (url_id,)
+            )
+            checks_data = curs.fetchall()
+
+        return checks_data
+
+    def create_check_entry(self, check_data: dict) -> None:
+        with self.conn.cursor(cursor_factory=NamedTupleCursor) as curs:
+            curs.execute(
+                'INSERT INTO url_checks '
+                '('
+                'url_id, status_code, h1, '
+                'title, description, created_at'
+                ') '
+                'VALUES (%s, %s, %s, %s, %s, %s)',
+                (
+                    check_data.get('id'), check_data.get('status_code'),
+                    check_data.get('h1'), check_data.get('title'),
+                    check_data.get('description'), date.today()
+                )
+            )
+            self.conn.commit()
