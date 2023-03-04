@@ -7,6 +7,7 @@ from .database import Urls, Checks, Database
 from .parser import get_check_data
 
 app = Flask(__name__)
+app.secret_key = 'test'
 
 @app.route('/')
 def homepage():
