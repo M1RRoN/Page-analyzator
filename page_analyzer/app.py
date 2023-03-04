@@ -1,6 +1,4 @@
-import os
 from urllib.parse import urlparse
-
 import psycopg2
 from flask import Flask, render_template, flash, redirect, url_for, request
 from requests import RequestException
