@@ -23,11 +23,3 @@ beautifulsoup4 = "^4.11.2"
 [build-system]
 requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
-
-[build]
-builder = "NIXPACKS"
-
-[deploy]
-startCommand = "poetry run gunicorn -w 5 -b 0.0.0.0:$(PORT) page_analyzer:app"
-restartPolicyType = "ON_FAILURE"
-restartPolicyMaxRetries = 10
