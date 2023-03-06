@@ -27,5 +27,3 @@ make install
 ```shell
 make start
 ```
-
-## Contacts
