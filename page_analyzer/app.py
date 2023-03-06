@@ -1,91 +1,150 @@
-from urllib.parse import urlparse
+import bs4
 import psycopg2
-from flask import Flask, render_template, flash, redirect, url_for, request
-from requests import RequestException
-import validators
-from .database import Urls, Checks, Database
-from .parser import get_check_data
+import psycopg2.extras
+import os
+import requests
+import datetime
+from flask import Flask, request, url_for, flash, redirect, render_template
+from dotenv import load_dotenv
+from requests import ConnectionError, HTTPError
+from urllib.parse import urlparse
+from page_analyzer.url import validate_url
+
 
 app = Flask(__name__)
-app.secret_key = 'test'
+
+
+load_dotenv()
+app.config['SECRET_KEY'] = os.getenv('SECRET_KEY')
+DATABASE_URL = os.getenv('DATABASE_URL')
+
+
+def get_connection():
+    return psycopg2.connect(DATABASE_URL)
+
+
+def get_content_of_page(page_data):
+    soup = bs4.BeautifulSoup(page_data, 'html.parser')
+    h1 = soup.find('h1').get_text() if soup.find('h1') else ''
+    title = soup.find('title').get_text() if soup.find('title') else ''
+    meta = soup.find(
+        'meta', {"name": "description"}).attrs['content'] if soup.find(
+        'meta', {"name": "description"}) else ''
+    return h1, title, meta
+
 
 @app.route('/')
-def homepage():
+def index():
     return render_template('index.html')
 
-@app.get('/urls')
-def show_all_urls():
-    try:
-        with Urls() as db:
-            urls_data = db.get_urls_data()
-
-        return render_template(
-            'urls.html', urls=urls_data
-        )
-
-    except psycopg2.DatabaseError:
-        flash('Не удалось подключиться к базе данных', 'alert-warning')
-        return redirect(url_for('homepage'))
 
 @app.post('/urls')
-def new_url():
-    url = urlparse(request.form.get('url'))
-    norm_url = url.scheme + '://' + url.netloc
-
-    if not validators.url(norm_url) or len(norm_url) > 255:
-        flash('Некорректный URL', 'alert-danger')
-        return render_template('index.html'), 422
-
-    try:
-        with Urls() as db:
-            url_data = db.find_url_by_name(norm_url)
-
-            if url_data:
-                url_id = url_data.id
-                flash('Страница уже существует', 'alert-info')
-            else:
-                url_id = db.create_url_entry(norm_url)
-                flash('Страница успешно добавлена', 'alert-success')
-
-        return redirect(url_for('show_url', id=url_id))
-
-    except psycopg2.DatabaseError:
-        flash('Не удалось подключиться к базе данных', 'alert-warning')
-        return redirect(url_for('homepage'))
-
-
-@app.get('/urls/<int:id>')
-def show_url(id):
-    try:
-        with Urls() as db:
-            url_data = db.find_url_by_id(id)
-            checks_data = Checks.find_checks(db, id)
-
+def post_url():
+    url = request.form.get('url')
+    errors = validate_url(url)
+    if errors:
+        for error in errors:
+            flash(error, "alert alert-danger")
         return render_template(
-            'show_url.html', url=url_data,
-            url_checks=checks_data
-        )
+            'index.html',
+            url_input=url,
+        ), 422
+    parsed_url = urlparse(url)
+    valid_url = parsed_url.scheme + '://' + parsed_url.netloc
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.NamedTupleCursor) as cur:
+            cur.execute("""
+                SELECT id FROM urls
+                WHERE name = %s""", [valid_url])
+            result = cur.fetchone()
+            if result:
+                flash("Страница уже существует", "alert alert-info")
+                return redirect(url_for('url_added', id=result.id))
 
-    except psycopg2.DatabaseError:
-        flash('Не удалось подключиться к базе данных', 'alert-warning')
-        return redirect(url_for('homepage'))
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            date = datetime.date.today()
+            cur.execute("""
+                INSERT INTO urls (name, created_at)
+                VALUES (%s, %s) RETURNING id""", [valid_url, date])
+            url_id = cur.fetchone()[0]
+            conn.commit()
+        flash("Страница успешно добавлена", "alert alert-success")
+        return redirect(url_for('url_added', id=url_id))
 
 
-@app.post('/urls/<int:id>/check')
-def check_url(id):
+@app.route('/urls/<id>')
+def url_added(id):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT name, created_at
+                FROM urls
+                WHERE id = %s""", [id])
+            url_name, url_created_at = cur.fetchone()
+
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.NamedTupleCursor) as cur:
+            cur.execute("""
+                SELECT id, created_at, status_code, h1, title, description
+                FROM url_checks
+                WHERE url_id = %s
+                ORDER BY id DESC""", [id])
+            rows = cur.fetchall()
+    return render_template(
+        'page.html',
+        url_name=url_name,
+        url_id=id,
+        url_created_at=url_created_at.date(),
+        checks=rows
+    )
+
+
+@app.get('/urls')
+def urls_get():
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.NamedTupleCursor) as cur:
+            cur.execute("""
+                SELECT
+                DISTINCT ON (urls.id) urls.id, urls.name, MAX(url_checks.created_at), url_checks.status_code
+                FROM urls
+                LEFT JOIN url_checks ON urls.id = url_checks.url_id
+                GROUP BY urls.id, url_checks.status_code
+                ORDER BY urls.id DESC""")
+            rows = cur.fetchall()
+    return render_template(
+        'pages.html',
+        checks=rows
+    )
+
+
+@app.route('/urls/<id>/checks', methods=['POST'])
+def id_check(id):
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.NamedTupleCursor) as cur:
+            cur.execute("""
+                SELECT name
+                FROM urls
+                WHERE id = %s""", [id])
+            result = cur.fetchone()
+
+    url_name = result.name
     try:
-        with Database() as db:
-            url_name = Urls.find_url_by_id(db, id).name
-            check_data = get_check_data(id, url_name)
-            Checks.create_check_entry(db, check_data)
+        response = requests.get(url_name)
+        response.raise_for_status()
+    except (ConnectionError, HTTPError):
+        flash("Произошла ошибка при проверке", "alert alert-danger")
+        return redirect(url_for('url_added', id=id))
 
-        flash('Страница успешно проверена', 'alert-success')
-        return redirect(url_for('show_url', id=id))
-
-    except psycopg2.DatabaseError:
-        flash('Не удалось подключиться к базе данных', 'alert-warning')
-        return redirect(url_for('homepage'))
-
-    except RequestException:
-        flash('Произошла ошибка при проверке', 'alert-danger')
-        return redirect(url_for('show_url', id=id))
+    status_code = response.status_code
+    h1, title, meta = get_content_of_page(response.text)
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            date = datetime.date.today()
+            cur.execute("""
+                INSERT INTO url_checks (url_id, created_at, status_code, h1, title, description)
+                VALUES (%s, %s, %s, %s, %s, %s)""", [
+                id, date, status_code, h1, title, meta])
+            conn.commit()
+    flash("Страница успешно проверена", "alert alert-success")
+    return redirect(url_for('url_added', id=id))
