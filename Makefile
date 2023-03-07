@@ -4,7 +4,7 @@ schema-load:
 	psql python-project-83 < database.sql
 
 db-create:
-	createdb python-project-83
+	`createdb python-project-83`
 
 db-reset:
 	dropdb python-project-83 || true
