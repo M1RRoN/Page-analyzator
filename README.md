@@ -16,14 +16,14 @@ Web-service for check status of websites. [Live Demo](https://python-project-83-
 * Parse meta-description
 
 
-## Install
+## How to run
 
-```powershell
-make install
 ```
+Clone this repository
 
-## Usage
+Install dependencies by poetry install
 
-```shell
-make start
+Copy the content from .env.sample and paste it in your .env file. cp .env.sample .env
+
+Run one of commands make dev or make start
 ```
