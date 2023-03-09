@@ -1,4 +1,3 @@
-import bs4
 import psycopg2
 import psycopg2.extras
 import os
@@ -9,6 +8,7 @@ from dotenv import load_dotenv
 from requests import ConnectionError, HTTPError
 from urllib.parse import urlparse
 from page_analyzer.url import validate_url
+from page_analyzer.page import get_content_of_page
 
 
 app = Flask(__name__)
@@ -21,16 +21,6 @@ DATABASE_URL = os.getenv('DATABASE_URL')
 
 def get_connection():
     return psycopg2.connect(DATABASE_URL)
-
-
-def get_content_of_page(page_data):
-    soup = bs4.BeautifulSoup(page_data, 'html.parser')
-    h1 = soup.find('h1').get_text() if soup.find('h1') else ''
-    title = soup.find('title').get_text() if soup.find('title') else ''
-    meta = soup.find(
-        'meta', {"name": "description"}).attrs['content'] if soup.find(
-        'meta', {"name": "description"}) else ''
-    return h1, title, meta
 
 
 @app.route('/')
