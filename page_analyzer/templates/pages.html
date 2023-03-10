@@ -24,8 +24,8 @@
             </a>
           </td>
           
-          <td>{{ url.max.date() if url.max else '' }}</td>
-          <td>{{ url.status_code or '' }}</td>
+          <td>{{ url.created_at }}</td>
+          <td>{{ url.status_code }}</td>
 
         </tr>
         {% endfor %}
